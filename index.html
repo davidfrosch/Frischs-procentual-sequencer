@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport" content="width=device-width">
+    <style> 
+    </style>
+
+    <title>FRISCHS PROCENTUAL SEQUENCER</title>
+  </head>
+
+  <body>
+
+    <select id="outputSelector" onchange="updatePort()">
+     <option value="null" selected>[none]</option>
+  </select>
+
+    <button onclick="sendMiddleC()">tester</button>
+
+     </body>
+
+<script type="text/javascript">
+
+// access output selector
+var outputSelector = document.querySelector('#outputSelector');
+
+// empty var to hold "midiAccess" 
+var midi; 
+
+// empty var to hold selected MIDI output port ID
+var mOutPort;
+
+// initialize WebMIDI 
+function onMIDISuccess( midiAccess ) {
+  midi = midiAccess;  
+  midi.outputs.forEach( 
+    function(port, key) {
+    var portName = port.name;
+    var portID = port.id;
+    var option = document.createElement("option");
+    option.setAttribute("value", portID);
+    var textNode = document.createTextNode(portName);
+    option.appendChild(textNode);
+    outputSelector.appendChild(option);    
+  });
+}
+
+navigator.requestMIDIAccess().then(onMIDISuccess);
+
+// define output port upon selection
+function updatePort() {
+    var i = outputSelector.selectedIndex;
+    mOutPort = outputSelector.options[i].value;
+}
+
+//
+// create Web Audio context for access to more convenient timing functions
+//
+
+window.AudioContext = window.AudioContext || window.webkitAudioContext;
+var audioContext = new AudioContext();
+
+// set latency hint; conditional feature detection to prevent errors
+if ("latencyHint" in audioContext) {
+audioContext.latencyHint = "playback";
+};
+
+// define current time
+var now = audioContext.currentTime;
+
+// set output channel
+var midiChannel = 1; // 1-16
+
+
+
+// define tempo
+
+var bpm = 130;
+
+var muteVel = 0;
+
+
+
+
+function sendMidiNote( note, vel, dur ) {
+ var noteOn = 0x90 + (midiChannel - 1);
+ var noteOff = 0x80 + (midiChannel - 1);  
+ var midiNoteBegin = [noteOn, note, vel];
+ var midiNoteEnd = [noteOff, note, muteVel];  
+ var midiNoteEndAlt = [noteOn, note, muteVel];  
+
+  
+ var output = midi.outputs.get(mOutPort);
+
+  output.send(midiNoteBegin, now + dur);  
+  output.send(midiNoteEnd, now + dur + 10); 
+
+}
+
+
+
+
+</script>
+
+ 
+
+</html>
