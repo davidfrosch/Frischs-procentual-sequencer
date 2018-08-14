@@ -5,6 +5,15 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
     <meta name="viewport" content="width=device-width">
     <style> 
+
+input[type=text] {
+    width: 100%;
+    padding: 12px 20px;
+    margin: 8px 0;
+    box-sizing: border-box;
+    font-size: 2em;
+}
+
     </style>
 
     <title>FRISCHS PROCENTUAL SEQUENCER</title>
@@ -16,18 +25,21 @@
      <option value="null" selected>[none]</option>
   </select>
 
-    <button onclick="sendMiddleC()">tester</button>
 
+    <input type="number" id="bpmInputField" value="130" oninput="changeTempo()" >
+
+    
+  
+      <input type="text" value="" id="sequencerRawText" oninput="writeSequence()" >
+
+    
      </body>
 
 <script type="text/javascript">
-
 // access output selector
 var outputSelector = document.querySelector('#outputSelector');
-
 // empty var to hold "midiAccess" 
 var midi; 
-
 // empty var to hold selected MIDI output port ID
 var mOutPort;
 
@@ -47,7 +59,6 @@ function onMIDISuccess( midiAccess ) {
 }
 
 navigator.requestMIDIAccess().then(onMIDISuccess);
-
 // define output port upon selection
 function updatePort() {
     var i = outputSelector.selectedIndex;
@@ -65,20 +76,30 @@ var audioContext = new AudioContext();
 if ("latencyHint" in audioContext) {
 audioContext.latencyHint = "playback";
 };
-
 // define current time
 var now = audioContext.currentTime;
-
 // set output channel
 var midiChannel = 1; // 1-16
-
-
-
 // define tempo
+var bpm = document.getElementById("bpmInputField").value;
 
-var bpm = 130;
+function changeTempo () {
+  bpm = document.getElementById("bpmInputField").value;
+}
+
+var oneBarInMs = 60/bpm*4*1000;
+var noteLength = 50;
 
 var muteVel = 0;
+
+console.log(oneBarInMs);
+
+
+var sequenceFromText = document.getElementById("sequencerRawText").value.split("-");
+
+function writeSequence () {
+  sequenceFromText = document.getElementById("sequencerRawText").value.split("-"); 
+}
 
 
 
@@ -89,14 +110,23 @@ function sendMidiNote( note, vel, dur ) {
  var midiNoteBegin = [noteOn, note, vel];
  var midiNoteEnd = [noteOff, note, muteVel];  
  var midiNoteEndAlt = [noteOn, note, muteVel];  
-
   
  var output = midi.outputs.get(mOutPort);
-
-  output.send(midiNoteBegin, now + dur);  
-  output.send(midiNoteEnd, now + dur + 10); 
-
+  output.send(midiNoteBegin,  window.performance.now() + oneBarInMs/100*dur);  
+  console.log(dur);
+  output.send(midiNoteEnd, window.performance.now() + oneBarInMs/100*dur + noteLength); 
 }
+
+
+
+setInterval(
+  function runSequencer () {
+for(let i = 0; i < sequenceFromText.length; i++){
+    sendMidiNote.apply(this, JSON.parse("[" + sequenceFromText[i] + "]"));
+    console.log(JSON.parse("[" + sequenceFromText[i] + "]"))
+};
+ }
+ , oneBarInMs);
 
 
 
