@@ -7,22 +7,23 @@
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Space+Grotesk:wght@400&display=swap" rel="stylesheet">
   <style>
     * { box-sizing: border-box; }
-    html, body { margin:0;letter-spacing: 0.03em; height:100vh; display:flex; flex-direction:column; background:#000; color:#fff; font-family:'Space Grotesk',sans-serif; overflow:hidden; }
+    html, body { margin:0; letter-spacing:0.03em; height:100vh; display:flex; flex-direction:column; background:#000; color:#fff; font-family:'Space Grotesk',sans-serif; overflow:hidden; }
     .visualization { flex:1; background:#0000df; position:relative; cursor:pointer; }
-    .note-rect { position:absolute; width:24px; background:#fff; cursor:grab; transition:background 0.2s ease; }
+    .note-rect { position:absolute; background:#fff; cursor:grab; transition:background 0.2s ease; }
     .note-rect:hover { background:#ccc; }
     .note-rect.dragging { cursor:grabbing; }
     .container { background:#111; overflow-y:auto; padding:2.2rem 6rem; }
-    .control-row, .note-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem; align-items:end; margin-bottom:1rem; }
+    .control-row { display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem; align-items:end; margin-bottom:1rem; }
+    .note-row     { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:1rem; align-items:end; margin-bottom:1rem; }
     label { margin-bottom:0.3rem; font-size:0.8rem; display:block; }
     input, button { font-size:1rem; }
     input { all:unset; width:100%; border-bottom:1px solid #fff; padding:0.3rem 0; color:#fff; }
-    input.note-name { font-weight:bold; color:#9aff39; }
-    input.note-delay, input.note-length { width:100%; }
+    input.note-name     { font-weight:bold; color:#9aff39; }
+    input.note-delay, input.note-length, input.note-velocity { width:100%; }
     .bottom-row { display:flex; gap:1rem; justify-content:center; margin-top:2rem; }
-    .bottom-row button { flex:1; border:0; font-family:'Space Grotesk' ; background:rgb(255, 255, 255); color:#000; padding:0.8rem; border-radius:0px; text-align:center; cursor:pointer; }
+    .bottom-row button { flex:1; border:0; font-family:'Space Grotesk'; background:#fff; color:#000; padding:0.8rem; border-radius:0; cursor:pointer; }
     .bottom-row button.playing { background:#0f0; }
-    .progress-bar { position:fixed; top:0; left:0; height:4px; background:#0f0; width:0%; transition:width 0s; z-index:100; }
+    .progress-bar { position:fixed; top:0; left:0; height:4px; background:#0f0; width:0; transition:width 0s; z-index:100; }
   </style>
 </head>
 <body>
@@ -31,13 +32,14 @@
     <div class="control-row">
       <div><label for="bpm-input">BPM</label><input type="number" id="bpm-input" value="120"></div>
       <div><label for="length-input">Length (beats)</label><input type="number" id="length-input" value="4"></div>
-      <div><label for="hold-input">Hold (ms)</label><input type="number" id="hold-input" value="100" step="10" min="0"></div>  
+      <div><label for="hold-input">Hold (ms)</label><input type="number" id="hold-input" value="100" step="10" min="0"></div>
     </div>
     <div id="note-inputs">
       <div class="note-row">
         <div><label>Note</label><input type="text" placeholder="C4" class="note-name"></div>
-        <div><label>Delays (%)</label><input type="text" placeholder="..in percentages (25,50) or expressions (100/2)" class="note-delay"></div>
+        <div><label>Delays (%)</label><input type="text" placeholder="25, 50 or expressions (100/2)" class="note-delay"></div>
         <div><label>Length (ms)</label><input type="text" placeholder="optional" class="note-length"></div>
+        <div><label>Velocity</label><input type="text" placeholder="0–127" class="note-velocity"></div>
       </div>
     </div>
     <div class="bottom-row">
@@ -49,207 +51,224 @@
   <script>
     // MIDI & Audio setup
     let midiAccess, output, audioCtx;
-    let playing=false, loopInterval;
-    const ATTACK=0.01, RELEASE=0.05;
-    const bpmInput=document.getElementById('bpm-input');
-    const lengthInput=document.getElementById('length-input');
-    const holdInput=document.getElementById('hold-input');
-    const playButton=document.getElementById('play-button');
-    const visualization=document.getElementById('visualization');
-    const progressBar=document.getElementById('progress-bar');
+    let playing = false, loopInterval;
+    const ATTACK = 0.01, RELEASE = 0.05;
+    const bpmInput = document.getElementById('bpm-input');
+    const lengthInput = document.getElementById('length-input');
+    const holdInput = document.getElementById('hold-input');
+    const playButton = document.getElementById('play-button');
+    const visualization = document.getElementById('visualization');
+    const progressBar = document.getElementById('progress-bar');
 
     navigator.requestMIDIAccess()
-      .then(midi=>{ midiAccess=midi; output=[...midi.outputs.values()][0]||null; })
-      .catch(_=>{ output=null; });
+      .then(midi => { midiAccess = midi; output = [...midi.outputs.values()][0] || null; })
+      .catch(_ => { output = null; });
 
-    function noteToMidi(n){ const m=n.toUpperCase().match(/^([A-G])(#?)(\d)$/); return m?((parseInt(m[3])+1)*12 + {C:0,D:2,E:4,F:5,G:7,A:9,B:11}[m[1]] + (m[2]?1:0)):null; }
-    function midiNoteToFreq(m){ return 440 * Math.pow(2,(m-69)/12); }
-    function evaluate(e){ try{return Function('return('+e+')')();}catch{return NaN;} }
-    function parseList(s){ return s.split(',').map(x=>evaluate(x.trim())).filter(x=>!isNaN(x)); }
-    function formatList(a){ return a.map(x=>x.toFixed(2)).join(','); }
+    function noteToMidi(n) {
+      const m = n.toUpperCase().match(/^([A-G])(#?)(\d)$/);
+      return m ? ((parseInt(m[3]) + 1) * 12 + {C:0,D:2,E:4,F:5,G:7,A:9,B:11}[m[1]] + (m[2] ? 1 : 0)) : null;
+    }
+    function midiNoteToFreq(m) {
+      return 440 * Math.pow(2, (m - 69) / 12);
+    }
+    function evaluate(e) {
+      try { return Function('return(' + e + ')')(); } catch { return NaN; }
+    }
+    function parseList(s) {
+      return s.split(',').map(x => evaluate(x.trim())).filter(x => !isNaN(x));
+    }
+    function formatList(a) {
+      return a.map(x => x.toFixed(2)).join(',');
+    }
 
+    function getLoopDuration() {
+      return +lengthInput.value * (60 / +bpmInput.value) * 1000;
+    }
     function animateProgressBar() {
-  progressBar.style.transition = 'none';
-  progressBar.style.width = '0%';
-  requestAnimationFrame(() => {
-    progressBar.style.transition = `width ${getLoopDuration()}ms linear`;
-    progressBar.style.width = '100%';
-  });
-}
+      progressBar.style.transition = 'none';
+      progressBar.style.width = '0';
+      requestAnimationFrame(() => {
+        progressBar.style.transition = `width ${getLoopDuration()}ms linear`;
+        progressBar.style.width = '100%';
+      });
+    }
 
-
-    // Add new row
-    function addInput(){
-      const div=document.createElement('div'); div.className='note-row';
-      div.innerHTML=`<div><label>Note</label><input type="text" placeholder="C4" class="note-name"></div>
-                     <div><label>Delays (%)</label><input type="text" placeholder="25, 100/2" class="note-delay"></div>
-                     <div><label>Length (ms)</label><input type="text" placeholder=" optional" class="note-length"></div>`;
+    function addInput() {
+      const div = document.createElement('div');
+      div.className = 'note-row';
+      div.innerHTML = `
+        <div><label>Note</label><input type="text" placeholder="C4" class="note-name"></div>
+        <div><label>Delays (%)</label><input type="text" placeholder="25, 50 or expressions (100/2)" class="note-delay"></div>
+        <div><label>Length (ms)</label><input type="text" placeholder="optional" class="note-length"></div>
+        <div><label>Velocity</label><input type="text" placeholder="0–127" class="note-velocity"></div>
+      `;
       document.getElementById('note-inputs').append(div);
     }
 
-    // Playback
-    function getLoopDuration(){ return +lengthInput.value * (60/+bpmInput.value) *1000; }
-    function playTone(freq,start,dur){
-      if(!audioCtx) audioCtx=new(window.AudioContext||window.webkitAudioContext)();
-      const now=audioCtx.currentTime;
-      const osc=audioCtx.createOscillator(), g=audioCtx.createGain();
-      osc.type='sine';osc.frequency.setValueAtTime(freq,now);
-      osc.connect(g);g.connect(audioCtx.destination);
-      g.gain.setValueAtTime(0,now+start);
-      g.gain.linearRampToValueAtTime(1,now+start+ATTACK);
-      g.gain.setValueAtTime(1,now+start+dur);
-      g.gain.linearRampToValueAtTime(0,now+start+dur+RELEASE);
-      osc.start(now+start);osc.stop(now+start+dur+RELEASE);
+    function playTone(freq, start, dur, vel = 100) {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const now = audioCtx.currentTime;
+      const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
+      osc.type = 'sine'; osc.frequency.setValueAtTime(freq, now);
+      osc.connect(g); g.connect(audioCtx.destination);
+      const volume = Math.max(0, Math.min(1, vel / 127));
+      g.gain.setValueAtTime(0, now + start);
+      g.gain.linearRampToValueAtTime(volume, now + start + ATTACK);
+      g.gain.setValueAtTime(volume, now + start + dur);
+      g.gain.linearRampToValueAtTime(0, now + start + dur + RELEASE);
+      osc.start(now + start);
+      osc.stop(now + start + dur + RELEASE);
     }
-    function playSequence(){
-      const measure=(+lengthInput.value)*(60/+bpmInput.value);
-      document.querySelectorAll('.note-row').forEach(row=>{
-        const midi=noteToMidi(row.querySelector('.note-name').value.trim());
-        if(midi==null) return;
-        const freq=midiNoteToFreq(midi);
-        const delays=parseList(row.querySelector('.note-delay').value);
+
+    function playSequence() {
+      const measure = +lengthInput.value * (60 / +bpmInput.value);
+      document.querySelectorAll('.note-row').forEach(row => {
+        const midi = noteToMidi(row.querySelector('.note-name').value.trim());
+        if (midi == null) return;
+        const freq = midiNoteToFreq(midi);
+        const delays = parseList(row.querySelector('.note-delay').value);
         const lengths = parseList(row.querySelector('.note-length').value).map(ms => ms / 1000);
-        delays.forEach((d,i)=>{
-          const delaySec=d/100*measure;
-          let dur=parseFloat(holdInput.value)/1000;
-          if(lengths.length===delays.length) dur=lengths[i];
-          else if(lengths.length===1) dur=lengths[0];
-          if(output){
-            setTimeout(()=>{ output.send([0x90,midi,100]); setTimeout(()=>output.send([0x80,midi,0]),dur*1000); },delaySec*1000);
-          } else playTone(freq,delaySec,dur);
+        const velocities = parseList(row.querySelector('.note-velocity').value);
+        delays.forEach((d, i) => {
+          const delaySec = d / 100 * measure;
+          let dur = parseFloat(holdInput.value) / 1000;
+          if (lengths.length === delays.length) dur = lengths[i];
+          else if (lengths.length === 1) dur = lengths[0];
+          let vel = 100;
+          if (velocities.length === delays.length) vel = velocities[i];
+          else if (velocities.length === 1) vel = velocities[0];
+          vel = Math.round(Math.max(0, Math.min(127, vel)));
+          if (output) {
+            setTimeout(() => { output.send([0x90, midi, vel]); setTimeout(() => output.send([0x80, midi, 0]), dur * 1000); }, delaySec * 1000);
+          } else {
+            playTone(freq, delaySec, dur, vel);
+          }
         });
       });
     }
 
-    // Render
-    function renderNotes(){
-      const vis=visualization; vis.innerHTML='';
-      // Collect valid rows
-      let rows=[];
-      document.querySelectorAll('.note-row').forEach((row,idx)=>{
-        const midi=noteToMidi(row.querySelector('.note-name').value.trim());
-        const delays=parseList(row.querySelector('.note-delay').value);
-        if(midi!=null && delays.length) rows.push({row, midi, delays, idx});
+    function renderNotes() {
+      const vis = visualization;
+      vis.innerHTML = '';
+      let rows = [];
+      document.querySelectorAll('.note-row').forEach((row, idx) => {
+        const midi = noteToMidi(row.querySelector('.note-name').value.trim());
+        const delays = parseList(row.querySelector('.note-delay').value);
+        if (midi != null && delays.length) rows.push({ row, midi, delays, idx });
       });
-      if(!rows.length) return;
-      // Sort rows by pitch descending
-      rows.sort((a,b)=>b.midi-a.midi);
-      const slotH=vis.clientHeight/rows.length;
-      rows.forEach((rdata,i)=>{
-        rdata.delays.forEach((d,j)=>{
-  const x = d / 100 * vis.clientWidth;
-
-  // Get corresponding length
-  const lengthField = rdata.row.querySelector('.note-length').value;
-  const lengths = parseList(lengthField).map(ms => ms / 1000);
-  let duration = parseFloat(holdInput.value)/1000; // fallback
-  if (lengths.length === rdata.delays.length) duration = lengths[j];
-  else if (lengths.length === 1) duration = lengths[0];
-
-  const measure = (+lengthInput.value) * (60 / +bpmInput.value);
-  const durationPct = duration / measure; // fraction of total measure
-  const width = durationPct * vis.clientWidth;
-
-  const rect = document.createElement('div');
-  rect.className = 'note-rect';
-  rect.style.left = `${x}px`;
-  rect.style.width = `${width}px`; // <-- This sets the visual length
-  rect.style.top = `${i * slotH}px`;
-  rect.style.height = `${slotH}px`;
-
-  rect.dataset.rowIndex = rdata.idx;
-  rect.dataset.idx = j;
-
-  rect.addEventListener('pointerdown', startDrag);
-rect.addEventListener('dblclick', e => {
-  e.stopPropagation();
-  const input = rdata.row.querySelector('.note-delay');
-  let currentDelays = parseList(input.value);
-  const delayToRemove = d;
-  const indexToRemove = currentDelays.findIndex(v => Math.abs(v - delayToRemove) < 0.001);
-  if (indexToRemove !== -1) {
-    currentDelays.splice(indexToRemove, 1);
-    input.value = formatList(currentDelays);
-    renderNotes();
-  }
-});
-
-  vis.appendChild(rect);
-});
+      if (!rows.length) return;
+      rows.sort((a, b) => b.midi - a.midi);
+      const slotH = vis.clientHeight / rows.length;
+      rows.forEach((rdata, i) => {
+        const velocities = parseList(rdata.row.querySelector('.note-velocity').value);
+        rdata.delays.forEach((d, j) => {
+          const x = d / 100 * vis.clientWidth;
+          const lengthField = rdata.row.querySelector('.note-length').value;
+          const lengths = parseList(lengthField).map(ms => ms / 1000);
+          let duration = parseFloat(holdInput.value) / 1000;
+          if (lengths.length === rdata.delays.length) duration = lengths[j];
+          else if (lengths.length === 1) duration = lengths[0];
+          const measure = +lengthInput.value * (60 / +bpmInput.value);
+          const width = (duration / measure) * vis.clientWidth;
+          let vel = 100;
+          if (velocities.length === rdata.delays.length) vel = velocities[j];
+          else if (velocities.length === 1) vel = velocities[0];
+          vel = Math.round(Math.max(0, Math.min(127, vel)));
+          const opacity = Math.max(0.2, Math.min(1, vel / 127));
+          const rect = document.createElement('div');
+          rect.className = 'note-rect';
+          rect.style.left = `${x}px`;
+          rect.style.width = `${width}px`;
+          rect.style.top = `${i * slotH}px`;
+          rect.style.height = `${slotH}px`;
+          rect.style.background = `rgba(255,255,255,${opacity})`;
+          rect.dataset.rowIndex = rdata.idx;
+          rect.dataset.idx = j;
+          rect.addEventListener('pointerdown', startDrag);
+          rect.addEventListener('dblclick', e => {
+            e.stopPropagation();
+            const inp = rdata.row.querySelector('.note-delay');
+            let arr = parseList(inp.value);
+            const indexToRemove = arr.findIndex(v => Math.abs(v - d) < 0.001);
+            if (indexToRemove !== -1) {
+              arr.splice(indexToRemove, 1);
+              inp.value = formatList(arr);
+              renderNotes();
+            }
+          });
+          vis.appendChild(rect);
+        });
       });
     }
 
     // Drag support
     function startDrag(e) {
-  e.stopPropagation();
-  const r = e.target;
-  r.classList.add('dragging');
+      e.stopPropagation();
+      const r = e.target;
+      r.classList.add('dragging');
+      const rowElems = document.querySelectorAll('.note-row');
+      const inp = rowElems[r.dataset.rowIndex].querySelector('.note-delay');
+      const rectBounds = r.getBoundingClientRect();
+      const visBounds = visualization.getBoundingClientRect();
+      const offsetX = e.clientX - rectBounds.left;
+      const move = ev => {
+        let x = ev.clientX - visBounds.left - offsetX;
+        x = Math.max(0, Math.min(visualization.clientWidth - rectBounds.width, x));
+        r.style.left = `${x}px`;
+      };
+      const up = () => {
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        r.classList.remove('dragging');
+        let arr = parseList(inp.value);
+        arr[r.dataset.idx] = parseFloat(((parseFloat(r.style.left) / visualization.clientWidth) * 100).toFixed(2));
+        inp.value = formatList(arr);
+        renderNotes();
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+    }
 
-  const rowElems = document.querySelectorAll('.note-row');
-  const inp = rowElems[r.dataset.rowIndex].querySelector('.note-delay');
+    // Add new delay on double-click in visualization background
+    visualization.addEventListener('dblclick', e => {
+      const height = visualization.clientHeight;
+      let rowsData = [];
+      document.querySelectorAll('.note-row').forEach((row, idx) => {
+        const midi = noteToMidi(row.querySelector('.note-name').value.trim());
+        const delays = parseList(row.querySelector('.note-delay').value);
+        if (midi != null && delays.length) rowsData.push({ row, midi, idx });
+      });
+      if (!rowsData.length) return;
+      rowsData.sort((a,b) => b.midi - a.midi);
+      const slotH = height / rowsData.length;
+      const rowIdx = Math.floor(e.offsetY / slotH);
+      if (rowIdx < 0 || rowIdx >= rowsData.length) return;
+      const target = rowsData[rowIdx];
+      const pct = parseFloat(((e.offsetX / visualization.clientWidth) * 100).toFixed(2));
+      let arr = parseList(target.row.querySelector('.note-delay').value);
+      arr.push(pct);
+      target.row.querySelector('.note-delay').value = formatList(arr);
+      renderNotes();
+    });
 
-  const rectBounds = r.getBoundingClientRect();
-  const visBounds = visualization.getBoundingClientRect();
-  const offsetX = e.clientX - rectBounds.left; // <--- This is the key fix
+    playButton.addEventListener('click', () => {
+      playing = !playing;
+      playButton.classList.toggle('playing', playing);
+      if (playing) {
+        playSequence();
+        renderNotes();
+        animateProgressBar();
+        loopInterval = setInterval(() => {
+          playSequence();
+          renderNotes();
+          animateProgressBar();
+        }, getLoopDuration());
+      } else {
+        clearInterval(loopInterval);
+      }
+    });
 
-  const move = ev => {
-    let x = ev.clientX - visBounds.left - offsetX; // adjust by initial click offset
-    x = Math.max(0, Math.min(visualization.clientWidth, x));
-    r.style.left = `${x}px`;
-  };
-
-  const up = () => {
-    document.removeEventListener('pointermove', move);
-    document.removeEventListener('pointerup', up);
-    r.classList.remove('dragging');
-
-    let arr = parseList(inp.value);
-    arr[r.dataset.idx] = parseFloat(((parseFloat(r.style.left) / visualization.clientWidth) * 100).toFixed(2));
-    inp.value = formatList(arr);
-    renderNotes();
-  };
-
-  document.addEventListener('pointermove', move);
-  document.addEventListener('pointerup', up);
-}
-
-    // Add on dblclick
-    document.getElementById('visualization').addEventListener('dblclick', e => {
-  const vis = document.getElementById('visualization');
-  const height = vis.clientHeight;
-  // Gather each note-row's MIDI pitch & reference
-  let rowsData = [];
-  document.querySelectorAll('.note-row').forEach((row, idx) => {
-    const midi = noteToMidi(row.querySelector('.note-name').value.trim());
-    const delays = parseList(row.querySelector('.note-delay').value);
-    if (midi != null && delays.length) rowsData.push({ row, midi, idx });
-  });
-  if (!rowsData.length) return;
-  rowsData.sort((a,b) => b.midi - a.midi);
-  const slotH = height / rowsData.length;
-  const sortedIdx = Math.floor(e.offsetY / slotH);
-  if (sortedIdx < 0 || sortedIdx >= rowsData.length) return;
-  const target = rowsData[sortedIdx];
-  const pct = parseFloat(((e.offsetX / vis.clientWidth) * 100).toFixed(2));
-  let arr = parseList(target.row.querySelector('.note-delay').value);
-  arr.push(pct);
-  target.row.querySelector('.note-delay').value = formatList(arr);
-  renderNotes();
-});
-
-    playButton.addEventListener('click',()=>{ playing=!playing; playButton.classList.toggle('playing',playing); if (playing) {
-  playSequence();
-  renderNotes();
-  animateProgressBar();
-  loopInterval = setInterval(() => {
-    playSequence();
-    renderNotes();
-    animateProgressBar();
-  }, getLoopDuration());
-}
- else clearInterval(loopInterval); });
-    document.addEventListener('DOMContentLoaded',renderNotes);
-    
+    document.addEventListener('DOMContentLoaded', renderNotes);
   </script>
 </body>
 </html>
