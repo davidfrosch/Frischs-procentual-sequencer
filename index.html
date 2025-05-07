@@ -217,8 +217,8 @@
         <input class="note-name" placeholder="C4" />
       </div>
       <div>
-        <label>Delays (%)</label>
-        <input class="note-delay" placeholder="25,50 or expr" />
+        <label>Offset (%)</label>
+        <input class="note-delay" placeholder="numbers or expressions" />
       </div>
       <div>
         <label>Length (ms)</label>
@@ -242,7 +242,7 @@
   <div id="about-modal">
     <div id="about-content">
       <span id="about-close">&times;</span>
-      <h2>David Frisch's Percentual MIDI Sequencer 2.0</h2>
+      <h2>Frisch's Fluid MIDI Sequencer 2.0</h2>
       <p>This MIDI sequencer allows you to break free of the grid.</p>
       <ul>
         <li>Enter notes (e.g. C4, F#3, Bb4) including flats.</li>
@@ -252,7 +252,7 @@
         <li>This default can be overwritten per note row via the two optional fields. Adding one value sets a new default for all notes in this row. Adding as many values as notes are specified, assigns each note their respective velocity or length value.</li>
         <li>Drag the not visualization to adjust timing.</li>
         <li>Double-click the blue area to add new step points.</li>
-        <li>Export your pattern as standart MIDI file.</li>
+        <li>Export your pattern as standard MIDI file.</li>
         <li>If no suitable midi interface is connected, a simple sine synth is activated.</li>
       </ul>
       <p>First conceptualized in 2018; Revisited and revived thanks to the LLMs in 2025.</p>
@@ -356,7 +356,7 @@
       div.className = 'note-row';
       div.innerHTML = `
         <div><label>Note</label><input class="note-name" placeholder="C4"/></div>
-        <div><label>Delays (%)</label><input class="note-delay" placeholder="25,50 or expr"/></div>
+        <div><label>Offset (%)</label><input class="note-delay" placeholder="numbers or expressions"/></div>
         <div><label>Length (ms)</label><input class="note-length" placeholder="optional"/></div>
         <div><label>Velocity</label><input class="note-velocity" placeholder="0–127"/></div>
         <div class="delete-cell"><span class="delete-row">&times;</span></div>
